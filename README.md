@@ -43,3 +43,7 @@ MIT — see `LICENSE`.
 ---
 
 <sub>Built by [Kontenlaris Studio](https://github.com/kontenlaris-studio) · More: [InvoiceKit](https://kontenlaris-studio.github.io/invoicekit/) · [SkillAudit](https://kontenlaris-studio.github.io/skill-audit/) · [PromptVault](https://github.com/kontenlaris-studio/promptkeep)</sub>
+
+## Also on SkillSafe
+
+This blueprint is published as a scan-verified skill with a hosted planner app: [Telegram Bot Monetization Planner](https://telegram-bot-monetization-planner.skillsafe.ai) · skill [@kontenlaris-studio/telegram-summarizer-bot](https://skillsafe.ai/share/shr_9y6q35a48qet). (Registry edition ships logic, ledger and summarizer; the transport module lives here, as messaging-host clients cannot pass the registry's communications scan.)
