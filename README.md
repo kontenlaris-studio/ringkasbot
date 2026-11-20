@@ -1,5 +1,7 @@
 # RingkasBot — Telegram Summarizer Bot with Star Credits
 
+**▶️ Live: [@KontenlarisRingkasBot](https://t.me/KontenlarisRingkasBot)** — open it, press Start, paste a long text.
+
 Long text in, short summary out — as a Telegram bot your customers pay per use.
 
 **Model:** every new user gets **3 free summaries**. After that, 1 credit = 1 summary, bought inside Telegram with **Telegram Stars** (10 credits / 15⭐ · 30 / 39⭐ · 100 / 99⭐). Credits never expire. No subscription, no external payment provider, no KYC for the bot owner — Stars are Telegram's native digital-goods currency, and earnings withdraw to a TON wallet.
