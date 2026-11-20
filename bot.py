@@ -67,6 +67,32 @@ def send(chat_id, text, **kw):
     return call("sendMessage", chat_id=chat_id, text=text, parse_mode="HTML", **kw)
 
 
+def send_long(chat_id, text):
+    """Telegram rejects messages over 4096 chars — split on paragraph bounds."""
+    chunks, rest = [], text
+    while len(rest) > 4000:
+        cut = rest.rfind("\n", 0, 4000)
+        if cut < 500:
+            cut = rest.rfind(" ", 0, 4000)
+        if cut < 500:
+            cut = 4000
+        chunks.append(rest[:cut])
+        rest = rest[cut:].lstrip()
+    chunks.append(rest)
+    ok = True
+    for c in chunks:
+        if not send(chat_id, c).get("ok"):
+            ok = False
+    return ok
+
+
+def valid_payment(payload, currency, amount):
+    """A Stars payment credits only when payload, currency and amount all match."""
+    if payload not in PACKAGES or currency != "XTR":
+        return False
+    return amount == PACKAGES[payload][1]
+
+
 def fetch_article(url):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 RingkasBot"})
     with urllib.request.urlopen(req, timeout=20) as r:
@@ -99,16 +125,15 @@ def handle_text(chat_id, uid, text):
         send(chat_id, "You're out of credits. Top up with /buy.")
         return
     b = store.balance(uid)
-    send(chat_id, f"📝 <b>Summary</b>\n\n{html.escape(summary)}\n\n"
+    delivered = send_long(chat_id, f"📝 <b>Summary</b>\n\n{html.escape(summary)}\n\n"
                   f"<i>Charged: {'free trial' if charged == 'free' else '1 credit'} · "
                   f"Free left: {b['free_left']} · Credits: {b['credits']}</i>")
+    if not delivered:  # never keep a charge for an undelivered summary
+        store.refund(uid, charged)
+        send(chat_id, "Delivery failed on Telegram's side — you were not charged. Please try again.")
 
 
 def handle_buy(chat_id, uid):
-    kb = {"inline_keyboard": [[
-        {"text": f"{c} summaries — {s} ⭐", "callback_data": p}]
-        for p, (c, s) in [("pack10", PACKAGES["pack10"])] ]}
-    # one row per package for readability
     kb = {"inline_keyboard": [
         [{"text": f"{c} summaries — {s} ⭐", "callback_data": p}]
         for p, (c, s) in PACKAGES.items()]}
@@ -133,14 +158,18 @@ def handle_callback(cb):
 
 def handle_update(upd):
     if "pre_checkout_query" in upd:
-        call("answerPreCheckoutQuery", pre_checkout_query_id=upd["pre_checkout_query"]["id"], ok=True)
+        q = upd["pre_checkout_query"]
+        ok = valid_payment(q.get("invoice_payload", ""), q.get("currency", ""),
+                           q.get("total_amount", -1))
+        call("answerPreCheckoutQuery", pre_checkout_query_id=q["id"], ok=ok,
+             **({} if ok else {"error_message": "Package no longer available — please reopen /buy."}))
         return
     msg = upd.get("message") or {}
     if "successful_payment" in msg:
         uid = msg["from"]["id"]
         pay = msg["successful_payment"]
         payload = pay.get("invoice_payload", "")
-        if payload in PACKAGES:
+        if valid_payment(payload, pay.get("currency", ""), pay.get("total_amount", -1)):
             credits, _ = PACKAGES[payload]
             added = store.add_payment(uid, pay["telegram_payment_charge_id"],
                                       credits, pay["total_amount"])
@@ -148,6 +177,9 @@ def handle_update(upd):
                 b = store.balance(uid)
                 send(msg["chat"]["id"], f"✅ Payment received — {credits} credits added. "
                                         f"Your balance: {b['credits']} credits.")
+        else:
+            send(msg["chat"]["id"], "⚠️ That payment didn't match a current package, so no "
+                                    "credits were added. Contact the bot owner if you were charged.")
         return
     if "callback_query" in upd:
         handle_callback(upd["callback_query"])
@@ -176,13 +208,37 @@ def handle_update(upd):
         handle_text(chat_id, uid, text)
 
 
+OFFSET_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".offset")
+
+
+def load_offset():
+    try:
+        return int(open(OFFSET_FILE).read().strip())
+    except Exception:
+        return 0
+
+
+def save_offset(value):
+    tmp = OFFSET_FILE + ".tmp"
+    open(tmp, "w").write(str(value))
+    os.replace(tmp, OFFSET_FILE)
+
+
 def main():
     if not TOKEN:
         print("Set BOT_TOKEN first (get it from @BotFather).", file=sys.stderr)
         return 2
+    # Single-instance lock: two pollers on one token would double-charge users.
+    import fcntl
+    lock = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".bot.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("Another RingkasBot instance is already running — exiting.", file=sys.stderr)
+        return 3
     me = call("getMe")
-    print("Running as", me.get("result", {}).get("username"))
-    offset = 0
+    print("Running as", me.get("result", {}).get("username"), flush=True)
+    offset = load_offset()
     while True:
         res = call("getUpdates", offset=offset, timeout=60,
                    allowed_updates=["message", "callback_query", "pre_checkout_query"])
@@ -191,7 +247,9 @@ def main():
             try:
                 handle_update(upd)
             except Exception as e:  # one bad update must never kill the bot
-                print("update error:", e, file=sys.stderr)
+                print("update error:", e, file=sys.stderr, flush=True)
+            finally:
+                save_offset(offset)  # handled (or logged): never replay it
         if not res.get("ok"):
             time.sleep(3)
 

@@ -54,6 +54,29 @@ with tempfile.TemporaryDirectory() as d:
     check("credits decrease", st.balance(uid)["credits"] == 9)
     stats = st.stats()
     check("stats count stars", stats["stars_earned"] == 15 and stats["users"] == 1)
+    # refund restores exactly what a charge took
+    st2 = Store(os.path.join(d, "t2.db"))
+    check("refund free restores trial", (st2.charge(7), st2.refund(7, "free"), st2.balance(7)["free_left"])[2] == FREE_TRIAL)
+    st2.add_payment(7, "c-9", 5, 39)
+    st2.charge(7)  # free
+    for _ in range(FREE_TRIAL - 1):
+        st2.charge(7)
+    check("refund credit restores balance", (st2.charge(7), st2.refund(7, "credit"), st2.balance(7)["credits"])[2] == 5)
+
+# payment validation + long-message splitting (import bot module functions)
+os.environ.setdefault("BOT_TOKEN", "test:test")
+os.environ["DB_PATH"] = os.path.join(tempfile.gettempdir(), "ringkasbot-selftest.db")
+import importlib.util
+spec = importlib.util.spec_from_file_location("botmod", os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot.py"))
+botmod = importlib.util.module_from_spec(spec)
+try:
+    spec.loader.exec_module(botmod)
+    check("valid payment accepted", botmod.valid_payment("pack10", "XTR", 15))
+    check("wrong amount rejected", not botmod.valid_payment("pack10", "XTR", 1))
+    check("wrong currency rejected", not botmod.valid_payment("pack10", "USD", 15))
+    check("unknown package rejected", not botmod.valid_payment("packX", "XTR", 15))
+except Exception as e:
+    check(f"bot module import ({e})", False)
 
 print(f"selftest: {passed} passed, {failed} failed")
 raise SystemExit(1 if failed else 0)

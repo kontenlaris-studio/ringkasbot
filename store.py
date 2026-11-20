@@ -64,6 +64,19 @@ class Store:
                 return "credit"
             return None
 
+    def refund(self, uid, kind):
+        """Undo a charge (used when delivering the summary fails)."""
+        with self.lock:
+            if kind == "free":
+                self.db.execute(
+                    "UPDATE users SET free_used=MAX(0, free_used-1), summaries=MAX(0, summaries-1) "
+                    "WHERE user_id=?", (uid,))
+            elif kind == "credit":
+                self.db.execute(
+                    "UPDATE users SET credits=credits+1, summaries=MAX(0, summaries-1) "
+                    "WHERE user_id=?", (uid,))
+            self.db.commit()
+
     def add_payment(self, uid, charge_id, credits, stars):
         """Credit a verified Stars payment. Idempotent on charge_id."""
         with self.lock:

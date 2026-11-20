@@ -1,3 +1,5 @@
 ringkasbot.db
 __pycache__/
 .env
+.offset
+.bot.lock
