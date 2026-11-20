@@ -58,6 +58,9 @@ def call(method, **params):
     except urllib.error.HTTPError as e:
         print("API error", method, e.code, e.read()[:200], file=sys.stderr)
         return {"ok": False}
+    except Exception as e:  # network hiccup / dropped connection: caller retries
+        print("API unreachable", method, type(e).__name__, file=sys.stderr)
+        return {"ok": False}
 
 
 def send(chat_id, text, **kw):
